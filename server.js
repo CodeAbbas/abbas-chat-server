@@ -8,22 +8,40 @@ app.use(cors());
 
 const server = http.createServer(app);
 
-// Setup Socket.io
 const io = new Server(server, {
   cors: {
-    origin: "*", // Allow connections from your website
+    origin: "*", // In production, restrict this to "https://abbasuddin.com"
     methods: ["GET", "POST"]
   }
 });
 
+// 1. GET THE PASSWORD FROM RENDER ENVIRONMENT (OR DEFAULT TO 'admin123')
+const ADMIN_PWD = process.env.ADMIN_PASSWORD || "admin123";
+
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Listen for chat messages
-  socket.on('chat message', (msg) => {
-    // Broadcast the message to EVERYONE (including the sender)
-    // This allows the sender to see their message confirmed by the server
-    io.emit('chat message', { text: msg, sender: socket.id });
+  socket.on('chat message', (data) => {
+    // data = { text: "...", senderId: "...", isAdmin: boolean, password: "..." }
+
+    // 2. SECURITY CHECK
+    if (data.isAdmin) {
+      if (data.password !== ADMIN_PWD) {
+        // If password is wrong, tell ONLY the sender (Admin)
+        io.to(socket.id).emit('auth_error', 'Invalid Access Code');
+        return; // Stop execution, do not broadcast
+      }
+    }
+
+    // 3. BROADCAST IF VALID
+    // We remove the password before sending it to everyone else for security
+    const safePayload = { 
+      text: data.text, 
+      senderId: data.senderId, 
+      isAdmin: data.isAdmin 
+    };
+    
+    io.emit('chat message', safePayload);
   });
 
   socket.on('disconnect', () => {
