@@ -5,11 +5,11 @@ const cors = require('cors');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
-require('dotenv').config();
+require('dotenv').config(); // Load environment variables from .env file
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); // To parse JSON bodies
 
 // Cloudinary Configuration
 cloudinary.config({
@@ -22,14 +22,15 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
-        folder: 'chat_attachments',
-        format: async (req, file) => 'auto',
-        public_id: (req, file) => `attachment-${Date.now()}-${file.originalname.split('.')[0]}!`,
+        folder: 'chat_attachments'
+        // We removed the custom format and public_id rules. 
+        // Cloudinary will now securely auto-generate a random, URL-safe filename.
     },
 });
 
 const parser = multer({ storage: storage });
 
+// Helper function for server-side HTML escaping
 function escapeHTML(str) {
     if (!str) return '';
     return str.replace(/&/g, '&amp;')
@@ -43,30 +44,48 @@ app.get('/', (req, res) => {
     res.status(200).send('Render Server is Awake!');
 });
 
-app.post('/upload', parser.single('file'), async (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ message: 'No file uploaded.' });
-    }
-    res.status(200).json({
-        url: req.file.path,
-        filename: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size
+// FILE UPLOAD ENDPOINT
+app.post('/upload', (req, res) => {
+    // Wrap the parser in a callback to catch Cloudinary errors gracefully
+    parser.single('file')(req, res, (err) => {
+        if (err) {
+            console.error("Cloudinary Upload Error:", err);
+            return res.status(500).json({ 
+                message: 'Upload failed', 
+                details: err.message || 'Unknown Cloudinary error' 
+            });
+        }
+        
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded.' });
+        }
+        
+        // Respond with the Cloudinary URL and other info
+        res.status(200).json({
+            url: req.file.path,
+            filename: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size
+        });
     });
 });
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
+    cors: {
+        origin: "https://abbasuddin.dev",
+        methods: ["GET", "POST"]
+    }
 });
 
-const ADMIN_PWD = process.env.ADMIN_PASSWORD;
+const ADMIN_PWD = process.env.ADMIN_PASSWORD || "admin123";
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
     socket.on('chat message', (data) => {
+        // Server-Side Input Validation and Sanitization
         const sanitizedText = escapeHTML(data.text);
         
         let fileInfo = null;
@@ -78,23 +97,31 @@ io.on('connection', (socket) => {
             };
         }
 
-        if (data.isAdmin && data.password !== ADMIN_PWD) {
-            io.to(socket.id).emit('auth_error', 'Invalid Access Code');
-            return;
+        // SECURITY CHECK for isAdmin
+        if (data.isAdmin) {
+            if (data.password !== ADMIN_PWD) {
+                io.to(socket.id).emit('auth_error', 'Invalid Access Code');
+                return;
+            }
         }
 
+        // BROADCAST IF VALID (Remove password and ensure sanitized data)
         const safePayload = { 
             text: sanitizedText, 
             senderId: data.senderId, 
             isAdmin: data.isAdmin,
-            file: fileInfo
+            file: fileInfo 
         };
         
         io.emit('chat message', safePayload);
     });
 
-    socket.on('disconnect', () => console.log('User disconnected'));
+    socket.on('disconnect', () => {
+        console.log('User disconnected');
+    });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
