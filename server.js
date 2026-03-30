@@ -5,11 +5,11 @@ const cors = require('cors');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
-require('dotenv').config(); // Load environment variables from .env file
+require('dotenv').config(); 
 
 const app = express();
 app.use(cors());
-app.use(express.json()); // To parse JSON bodies
+app.use(express.json()); 
 
 // Cloudinary Configuration
 cloudinary.config({
@@ -22,15 +22,24 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
-        folder: 'chat_attachments'
-        // We removed the custom format and public_id rules. 
-        // Cloudinary will now securely auto-generate a random, URL-safe filename.
+        folder: 'chat_attachments',
+        resource_type: 'auto' 
     },
 });
 
-const parser = multer({ storage: storage });
+// ROBUSTNESS ADDED: Limits and Security Filters
+const parser = multer({ 
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // Strict 10MB file size limit
+    fileFilter: (req, file, cb) => {
+        // Security check: Reject executable and script files
+        if (file.originalname.match(/\.(exe|bat|cmd|sh|msi|apk|bin)$/i)) {
+            return cb(new Error('Dangerous file types are not allowed.'));
+        }
+        cb(null, true); // File is safe to process
+    }
+});
 
-// Helper function for server-side HTML escaping
 function escapeHTML(str) {
     if (!str) return '';
     return str.replace(/&/g, '&amp;')
@@ -46,23 +55,23 @@ app.get('/', (req, res) => {
 
 // FILE UPLOAD ENDPOINT
 app.post('/upload', (req, res) => {
-    // Wrap the parser in a callback to catch Cloudinary errors gracefully
     parser.single('file')(req, res, (err) => {
         if (err) {
-            console.error("Cloudinary Upload Error:", err);
-            return res.status(500).json({ 
-                message: 'Upload failed', 
-                details: err.message || 'Unknown Cloudinary error' 
-            });
+            console.error("Upload Error:", err.message);
+            // Specifically catch the 10MB limit error to tell the user
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({ message: 'Upload failed', details: 'File is too large. Maximum size is 10MB.' });
+            }
+            // Catch our custom security filter error or Cloudinary errors
+            return res.status(400).json({ message: 'Upload failed', details: err.message });
         }
         
         if (!req.file) {
             return res.status(400).json({ message: 'No file uploaded.' });
         }
         
-        // Respond with the Cloudinary URL and other info
         res.status(200).json({
-            url: req.file.path,
+            url: req.file.path, 
             filename: req.file.originalname,
             mimetype: req.file.mimetype,
             size: req.file.size
@@ -73,10 +82,7 @@ app.post('/upload', (req, res) => {
 const server = http.createServer(app);
 
 const io = new Server(server, {
-    cors: {
-        origin: "https://abbasuddin.dev",
-        methods: ["GET", "POST"]
-    }
+    cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
 const ADMIN_PWD = process.env.ADMIN_PASSWORD || "admin123";
@@ -85,7 +91,6 @@ io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
     socket.on('chat message', (data) => {
-        // Server-Side Input Validation and Sanitization
         const sanitizedText = escapeHTML(data.text);
         
         let fileInfo = null;
@@ -97,7 +102,6 @@ io.on('connection', (socket) => {
             };
         }
 
-        // SECURITY CHECK for isAdmin
         if (data.isAdmin) {
             if (data.password !== ADMIN_PWD) {
                 io.to(socket.id).emit('auth_error', 'Invalid Access Code');
@@ -105,7 +109,6 @@ io.on('connection', (socket) => {
             }
         }
 
-        // BROADCAST IF VALID (Remove password and ensure sanitized data)
         const safePayload = { 
             text: sanitizedText, 
             senderId: data.senderId, 
