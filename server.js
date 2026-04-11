@@ -18,7 +18,6 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Configure Multer for Cloudinary storage
 const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
@@ -27,16 +26,15 @@ const storage = new CloudinaryStorage({
     },
 });
 
-// ROBUSTNESS ADDED: Limits and Security Filters
+// Security Filters
 const parser = multer({ 
     storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // Strict 10MB file size limit
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
     fileFilter: (req, file, cb) => {
-        // Security check: Reject executable and script files
         if (file.originalname.match(/\.(exe|bat|cmd|sh|msi|apk|bin)$/i)) {
             return cb(new Error('Dangerous file types are not allowed.'));
         }
-        cb(null, true); // File is safe to process
+        cb(null, true);
     }
 });
 
@@ -58,11 +56,9 @@ app.post('/upload', (req, res) => {
     parser.single('file')(req, res, (err) => {
         if (err) {
             console.error("Upload Error:", err.message);
-            // Specifically catch the 10MB limit error to tell the user
             if (err.code === 'LIMIT_FILE_SIZE') {
-                return res.status(413).json({ message: 'Upload failed', details: 'File is too large. Maximum size is 10MB.' });
+                return res.status(413).json({ message: 'Upload failed', details: 'File is too large. Max 10MB.' });
             }
-            // Catch our custom security filter error or Cloudinary errors
             return res.status(400).json({ message: 'Upload failed', details: err.message });
         }
         
@@ -80,7 +76,6 @@ app.post('/upload', (req, res) => {
 });
 
 const server = http.createServer(app);
-
 const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
@@ -102,25 +97,44 @@ io.on('connection', (socket) => {
             };
         }
 
+        // --- ADMIN SENDING A MESSAGE ---
         if (data.isAdmin) {
             if (data.password !== ADMIN_PWD) {
                 io.to(socket.id).emit('auth_error', 'Invalid Access Code');
                 return;
             }
-        }
 
-        const safePayload = { 
-            text: sanitizedText, 
-            senderId: data.senderId, 
-            isAdmin: data.isAdmin,
-            file: fileInfo 
-        };
+            const safePayload = { 
+                text: sanitizedText, 
+                senderId: data.senderId, 
+                isAdmin: data.isAdmin,
+                file: fileInfo 
+            };
+
+            // ✅ CRITICAL: Route specifically to the targeted visitor
+            if (data.targetUser) {
+                io.to(data.targetUser).emit('chat message', safePayload);
+            } else {
+                io.emit('chat message', safePayload);
+            }
+        } 
         
-        io.emit('chat message', safePayload);
+        // --- VISITOR SENDING A MESSAGE ---
+        else {
+            const safePayload = { 
+                text: sanitizedText, 
+                senderId: data.senderId,
+                isAdmin: data.isAdmin,
+                file: fileInfo 
+            };
+            
+            // Broadcast to Admin (and bounce back to visitor)
+            io.emit('chat message', safePayload);
+        }
     });
 
     socket.on('disconnect', () => {
-        console.log('User disconnected');
+        console.log('User disconnected:', socket.id);
     });
 });
 
