@@ -109,10 +109,10 @@ io.on('connection', (socket) => {
                 senderId: data.senderId, 
                 isAdmin: data.isAdmin,
                 file: fileInfo,
-                origin: escapeHTML(data.origin || 'Unknown Site')
+                origin: data.origin ? escapeHTML(data.origin) : 'Direct Link'
             };
 
-            // ✅ CRITICAL: Route specifically to the targeted visitor
+            // Route specifically to the targeted visitor
             if (data.targetUser) {
                 io.to(data.targetUser).emit('chat message', safePayload);
             } else {
@@ -126,7 +126,8 @@ io.on('connection', (socket) => {
                 text: sanitizedText, 
                 senderId: data.senderId,
                 isAdmin: data.isAdmin,
-                file: fileInfo 
+                file: fileInfo,
+                origin: data.origin ? escapeHTML(data.origin) : 'Direct Link'
             };
             
             // Broadcast to Admin (and bounce back to visitor)
