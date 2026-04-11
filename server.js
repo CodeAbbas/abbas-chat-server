@@ -108,7 +108,8 @@ io.on('connection', (socket) => {
                 text: sanitizedText, 
                 senderId: data.senderId, 
                 isAdmin: data.isAdmin,
-                file: fileInfo 
+                file: fileInfo,
+                origin: escapeHTML(data.origin || 'Unknown Site')
             };
 
             // ✅ CRITICAL: Route specifically to the targeted visitor
