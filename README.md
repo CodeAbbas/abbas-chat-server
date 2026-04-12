@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/Socket.IO-4.x-010101?style=for-the-badge&logo=socket.io&logoColor=white" alt="Socket.IO" />
   <img src="https://img.shields.io/badge/MongoDB-Mongoose-47A248?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB" />
   <img src="https://img.shields.io/badge/Cloudinary-Image%20Uploads-3448C5?style=for-the-badge&logo=cloudinary&logoColor=white" alt="Cloudinary" />
+  <img src="https://img.shields.io/badge/Google%20Apps%20Script-Keep--Alive%20Trigger-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Google Apps Script" />
 </div>
 
 ---
@@ -29,6 +30,7 @@
 - 🔐 **Secure config** — environment variables managed with dotenv
 - 🔑 **Crypto utilities** — built-in Node.js `crypto` for hashing/token generation
 - 🌐 **CORS-ready** — configured to accept cross-origin requests from the portfolio frontend
+- 🟢 **Always-on** — Google Apps Script keep-alive trigger pings the server every 15 minutes to prevent Render's free tier spin-down
 
 ---
 
@@ -44,6 +46,7 @@
 | Image CDN | Cloudinary |
 | Config | dotenv |
 | CORS | cors |
+| Keep-Alive | Google Apps Script (Time-Driven Trigger) |
 
 ---
 
@@ -115,6 +118,20 @@ To deploy your own instance on Render:
 3. Set the **Start Command** to `node server.js`
 4. Add your environment variables in the Render dashboard
 5. Deploy 🚀
+
+---
+
+### 🟢 Keep-Alive Strategy
+
+Render's free tier spins down instances after a period of inactivity, causing a cold-start delay of 30–60 seconds on the next request. To prevent this, a standalone **Google Apps Script** project (`RenderAwake`) runs a time-driven trigger every **15 minutes**, sending an HTTP GET request to the server's Render URL:
+
+```javascript
+function keepRenderAwake() {
+  UrlFetchApp.fetch("https://abbas-chat-server.onrender.com");
+}
+```
+
+This keeps the server warm around the clock with zero infrastructure cost, ensuring real-time chat on the portfolio feels instant for any visitor.
 
 ---
 
