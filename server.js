@@ -77,6 +77,10 @@ const ADMIN_PWD = process.env.ADMIN_PASSWORD;
 let currentAdminToken = null;
 
 io.on('connection', (socket) => {
+
+    socket.on('register visitor', (visitorId) => {
+        socket.join(visitorId);
+    });
     
     // --- ADMIN HANDSHAKE ---
     socket.on('admin login', async (password) => {
@@ -91,6 +95,7 @@ io.on('connection', (socket) => {
             io.to(socket.id).emit('auth_error', 'Invalid Access Code');
         }
     });
+
     // --- MESSAGE ROUTER ---
     socket.on('chat message', async (data) => {
         const sanitizedText = escapeHTML(data.text);
@@ -98,6 +103,7 @@ io.on('connection', (socket) => {
         if (data.file && data.file.url) {
             fileInfo = { url: escapeHTML(data.file.url), filename: escapeHTML(data.file.filename), mimetype: escapeHTML(data.file.mimetype) };
         }
+
         // 1. Admin Sending
         if (data.isAdmin) {
             if (data.token !== currentAdminToken || !currentAdminToken) {
@@ -105,24 +111,27 @@ io.on('connection', (socket) => {
                 return;
             }
             const safePayload = { 
-                text: sanitizedText, senderId: 'ADMIN', targetUser: data.targetUser,
+                text: sanitizedText, senderId: 'ADMIN', targetUser: escapeHTML(data.targetUser),
                 isAdmin: true, file: fileInfo, origin: 'Dashboard'
             };
-            // Save to DB
+            
             await new Message(safePayload).save();
+            
             if (data.targetUser) io.to(data.targetUser).emit('chat message', safePayload);
             else io.emit('chat message', safePayload);
         } 
         // 2. Visitor Sending
         else {
             const originStr = data.origin ? escapeHTML(data.origin) : 'Direct Link';
+            const persistentSenderId = data.senderId ? escapeHTML(data.senderId) : socket.id;
+
             const safePayload = { 
-                text: sanitizedText, senderId: socket.id, 
+                text: sanitizedText, 
+                senderId: persistentSenderId, 
                 isAdmin: false, file: fileInfo, origin: originStr
             };
-            // Save to DB
+            
             await new Message(safePayload).save();
-
             io.emit('chat message', safePayload);
         }
     });
