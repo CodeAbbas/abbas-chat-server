@@ -84,6 +84,23 @@ io.on('connection', (socket) => {
     socket.on('register visitor', (visitorId) => {
         socket.join(visitorId);
     });
+
+    // --- TYPING INDICATORS ---
+    socket.on('typing', (data) => {
+        if (data.isAdmin && data.targetUser) {
+            io.to(data.targetUser).emit('typing', data);
+        } else if (!data.isAdmin) {
+            io.emit('typing', data);
+        }
+    });
+
+    socket.on('stop typing', (data) => {
+        if (data.isAdmin && data.targetUser) {
+            io.to(data.targetUser).emit('stop typing', data);
+        } else if (!data.isAdmin) {
+            io.emit('stop typing', data);
+        }
+    });
     
     // --- ADMIN HANDSHAKE ---
     socket.on('admin login', async (password) => {
