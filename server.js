@@ -76,6 +76,9 @@ const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } 
 const ADMIN_PWD = process.env.ADMIN_PASSWORD;
 let currentAdminToken = null;
 
+// --- IN-MEMORY RATE LIMITER STORE ---
+const rateLimits = new Map();
+
 io.on('connection', (socket) => {
 
     socket.on('register visitor', (visitorId) => {
@@ -120,8 +123,33 @@ io.on('connection', (socket) => {
             if (data.targetUser) io.to(data.targetUser).emit('chat message', safePayload);
             else io.emit('chat message', safePayload);
         } 
-        // 2. Visitor Sending
+        
+        // 2. Visitor Sending 
         else {
+            const now = Date.now();
+            const windowMs = 10000;
+            const maxMsgs = 5;
+            if (!rateLimits.has(socket.id)) {
+                rateLimits.set(socket.id, []);
+            }
+
+            let timestamps = rateLimits.get(socket.id);
+            timestamps = timestamps.filter(t => now - t < windowMs);
+            if (timestamps.length >= maxMsgs) {
+                rateLimits.set(socket.id, timestamps);
+                socket.emit('chat message', {
+                    text: "⚠️ System Warning: You are sending messages too fast. Please wait 10 seconds.",
+                    senderId: 'SYSTEM',
+                    isAdmin: true,
+                    origin: 'System'
+                });
+                return; 
+            }
+
+            // Log the new valid timestamp
+            timestamps.push(now);
+            rateLimits.set(socket.id, timestamps);
+            // Proceed with normal sending
             const originStr = data.origin ? escapeHTML(data.origin) : 'Direct Link';
             const persistentSenderId = data.senderId ? escapeHTML(data.senderId) : socket.id;
 
@@ -134,6 +162,11 @@ io.on('connection', (socket) => {
             await new Message(safePayload).save();
             io.emit('chat message', safePayload);
         }
+    });
+
+    // --- PREVENT MEMORY LEAKS ---
+    socket.on('disconnect', () => {
+        rateLimits.delete(socket.id);
     });
 });
 
